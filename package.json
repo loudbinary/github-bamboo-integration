@@ -1,0 +1,22 @@
+{
+  "name": "github-bamboo-integration",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/loudbinary/github-bamboo-integration.git"
+  },
+  "author": "Loud Binary",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/loudbinary/github-bamboo-integration/issues"
+  },
+  "homepage": "https://github.com/loudbinary/github-bamboo-integration#readme",
+  "dependencies": {
+    "github-webhook-handler": "^0.6.0"
+  }
+}
