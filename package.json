@@ -17,6 +17,8 @@
   },
   "homepage": "https://github.com/loudbinary/github-bamboo-integration#readme",
   "dependencies": {
-    "github-webhook-handler": "^0.6.0"
+    "async": "^2.1.4",
+    "github-webhook-handler": "^0.6.0",
+    "jira-connector": "^2.5.0"
   }
 }
