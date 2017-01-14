@@ -5,13 +5,17 @@
   "bamboo":{
     "url":"<bamboo fqdn, no transport>",
     "username": "<bamboo username>",
-    "password": "<bamboo password>"
+    "password": "<bamboo password>",
     "project": "",
     "plan": ""
   },
   "github":{
     "username": "<github username>",
-    "password": "<github password>"
+    "password": "<github password>",
+    "webhook": {
+      "path": "/github",
+      "secret": "mygithubsecret"
+    }
   },
   "jira":{
     "url":"<jira cloud url, without the transport and just fqdn>",
