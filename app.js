@@ -8,35 +8,7 @@ var events = require('github-webhook-handler/events');
 var GitHub = require('github-api');
 var Bamboo = require('bamboo-api');
 
-// Setup Bamboo connection
-const bamboo = new Bamboo(
-    "https://" + config.bamboo.get('url'),
-    config.bamboo.get('username'),
-    config.bamboo.get('password'));
-
-// Setup GitHub Connection
-const github = new GitHub({
-    username: config.github.get('username'),
-    password:config.github.get('password')
-});
-
-// Setup Jira Connection
-const jira = new JiraClient({
-    host: config.jira.get('url'),
-    basic_auth: {
-        username: config.jira.get('username'),
-        password: config.jira.get('password')
-    }
-})
-
 config.bamboo.authorization = Buffer.from(config.bamboo.username + ':' + config.bamboo.password).toString('base64');
-// Start listening for webhooks
-http.createServer(function (req, res) {
-    handler(req, res, function (err) {
-        res.statusCode = 404;
-        res.end('no such location')
-    })
-}).listen(config.web.get('port'));
 
 function syncItem() {
     return {
@@ -151,6 +123,25 @@ handler.on('*', function(event){
 
 // Potentially dangerous recursive lookup, and wait for buildstatus in Bamboo.
 // TODO: Implement eventing for BuildStatus monitoring, and reporting
+
+function createNewItem(event){
+    var newItem = new syncItem();
+    newItem.issue_number = event.payload.number;
+    newItem.contributor = event.payload.sender.login;
+    newItem.repo  = event.payload.repository.full_name;
+    newItem.contributor_url = event.payload.sender.html_url;
+    newItem.smart_url = event.payload.repository.full_name + "#" + event.payload.number;
+    newItem.title = event.payload.pull_request.title;
+    newItem.description = event.payload.pull_request.body + " \r\n\r\nReferences: " + event.payload.repository.full_name + "#" + event.payload.number;
+    newItem.pr_branch = event.payload.pull_request.head.ref;
+    newItem.base_branch = event.payload.pull_request.base.ref;
+    newItem.issue_url = event.payload.pull_request.issue_url;
+    newItem.jiraIssue_url = "";
+    newItem.jira_key = "";
+    newItem.sha = event.payload.pull_request.head.sha;
+    newItem.statuses_url = event.payload.pull_request.statuses_url;
+    return (newItem);
+}
 function getBuildStatus(newItem,repo,bambooResults,callback) {
     bamboo.getBuildStatus(bambooResults.buildResultKey, function(error, result) {
         if (error) {
@@ -167,21 +158,7 @@ function getBuildStatus(newItem,repo,bambooResults,callback) {
 
 function checkStatus(event,callback) {
     if (isNewPr(event) == true) {
-        var newItem = new syncItem();
-        newItem.issue_number = event.payload.number;
-        newItem.contributor = event.payload.sender.login;
-        newItem.repo  = event.payload.repository.full_name;
-        newItem.contributor_url = event.payload.sender.html_url;
-        newItem.smart_url = event.payload.repository.full_name + "#" + event.payload.number;
-        newItem.title = event.payload.pull_request.title;
-        newItem.description = event.payload.pull_request.body + " \r\n\r\nReferences: " + event.payload.repository.full_name + "#" + event.payload.number;
-        newItem.pr_branch = event.payload.pull_request.head.ref;
-        newItem.base_branch = event.payload.pull_request.base.ref;
-        newItem.issue_url = event.payload.pull_request.issue_url;
-        newItem.jiraIssue_url = "";
-        newItem.jira_key = "";
-        newItem.sha = event.payload.pull_request.head.sha;
-        newItem.statuses_url = event.payload.pull_request.statuses_url;
+        var newItem = createNewItem(event);
         var repo = github.getRepo(newItem.repo);
         repo.updateStatus(newItem.sha, {
             state: 'pending', //The state of the status. Can be one of: pending, success, error, or failure.
@@ -217,7 +194,8 @@ function checkStatus(event,callback) {
                             context: 'Checking branch'
                         });
                         callback(null,newItem,repo);
-                    } else {
+                    }
+                    else {
                         repo.updateStatus(newItem.sha, {
                             state: 'success', //The state of the status. Can be one of: pending, success, error, or failure.
                             description: 'Open Anthem Team request, skipping validation...',
@@ -225,7 +203,6 @@ function checkStatus(event,callback) {
                         });
                         callback(null,newItem,repo);
                     }
-
                 }
             },
             function(newItem,repo,callback) {
@@ -358,7 +335,6 @@ function checkStatus(event,callback) {
                     }
                 })
             }
-
         ],function(err,newItem,repo){
             repo.updateStatus(newItem.sha, {
                 state: 'success', //The state of the status. Can be one of: pending, success, error, or failure.
