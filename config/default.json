@@ -1,0 +1,29 @@
+{
+  "web":{
+    "port": 7777
+  },
+  "bamboo":{
+    "url":"<bamboo fqdn, no transport>",
+    "username": "<bamboo username>",
+    "password": "<bamboo password>"
+  },
+  "github":{
+    "username": "<github username>",
+    "password": "<github password>"
+  },
+  "jira":{
+    "url":"<jira cloud url, without the transport and just fqdn>",
+    "username": "<jira - atlassian email address / username>",
+    "password": "<jira password>",
+    "project": {
+      "id": 10501 //As an example, this is Project ID found in my current configuration, found hovering over project link.
+    },
+    "issuetype": {
+      "id": 10101 //As an example, this is issueType ID found under project settings/issues, in the current configuration.
+    },
+    "labels":[ // What labels do you want applied to all created jira issues.
+      "pull_request",
+      "github"
+    ]
+  }
+}
