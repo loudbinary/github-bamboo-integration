@@ -307,8 +307,7 @@ function checkStatus(event,callback) {
             function(newItem,repo,callback){
                 var urlParams = {"os_authType": "basic","bamboo.variable.GITHUB_ISSUE_ID": newItem.issue_number, "bamboo.variable.JIRAISSUE_KEY": newItem.jira_key,"bamboo.variable.GITHUB_SHA": newItem.sha,"bamboo.variable.GITHUBISSUE_KEY": newItem.issue_number,"bamboo.variable.ISSUE_ID": newItem.issue_number,"bamboo.variable.JIRAISSUE_URL": newItem.jiraIssue_url,"bamboo.variable.GITHUB_ISSUE_URL": newItem.issue_url,"bamboo.variable.GITHUB_REPO": newItem.repo,"bamboo.variable.GITHUBISSUE_USER": "openanthem","bamboo.variable.JIRAISSUE_ID": newItem.jira_key};
                 var buildParams = {"executeAllStages": true};
-
-                bamboo.buildPlan("COR-BUIL", function(error, result) {
+                bamboo.buildPlan(config.bamboo.get('project') + "-" + config.bamboo.get('plan'), function(error, result) {
                     if (error) {
                         repo.updateStatus(newItem.sha, {
                             state: 'failure', //The state of the status. Can be one of: pending, success, error, or failure.
@@ -327,6 +326,7 @@ function checkStatus(event,callback) {
                     });
                     callback(null,newItem,repo,JSON.parse(result));
                 }, urlParams, buildParams);
+
             },
             function(newItem,repo,bambooResults,callback) {
                 repo.updateStatus(newItem.sha, {

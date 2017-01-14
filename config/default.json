@@ -6,6 +6,8 @@
     "url":"<bamboo fqdn, no transport>",
     "username": "<bamboo username>",
     "password": "<bamboo password>"
+    "project": "",
+    "plan": ""
   },
   "github":{
     "username": "<github username>",

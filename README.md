@@ -3,5 +3,6 @@ When a user creaes a new Pull request, this application will react to GitHub web
 
 Look at [default,json](config/default.json) and review needed settings.
 
-TODO: Add some screen shots, and what outcome looks like...
+Status results look like screen shot below
 
+![Status Screenshot Example](https://github.com/loudbinary/github-bamboo-integration/raw/master/docs/status-results.png)
