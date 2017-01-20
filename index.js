@@ -150,7 +150,7 @@ handler.on('*', function(event){
 function getBuildStatus(newItem,repo,bambooResults,callback) {
     bamboo.getBuildStatus(bambooResults.buildResultKey, function(error, result) {
         if (error) {
-            callback('Unable to get status')
+            callback(null,newItem,repo,bambooResults,true)
 
         }
         if (result === "Successful" || result === 'Finished') {
