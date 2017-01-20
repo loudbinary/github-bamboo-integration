@@ -1,4 +1,4 @@
-./idea
+.idea/
 ./idea/*
 # Block my local configuration from repo
 config/development.json
