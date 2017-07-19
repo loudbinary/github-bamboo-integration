@@ -1,42 +1,43 @@
-var async = require('async');
-var config = require('config');
-var JiraClient = require('jira-connector');
-var http = require('http');
-var createHandler = require('github-webhook-handler');
-var handler = createHandler({ path: '/webhook', secret: 'myhashsecret' });
-var events = require('github-webhook-handler/events');
-var GitHub = require('github-api');
-var Bamboo = require('bamboo-api');
+require('dotenv').config();
+const async = require('async');
+const JiraClient = require('jira-connector');
+const http = require('http');
+const createHandler = require('github-webhook-handler');
+const handler = createHandler({ path: '/webhook', secret: 'myhashsecret' });
+const events = require('github-webhook-handler/events');
+const GitHub = require('github-api');
+const Bamboo = require('bamboo-api');
 
+console.log(process.env.JIRA_LABELS);
 // Setup Bamboo connection
 const bamboo = new Bamboo(
-    "https://" + config.bamboo.get('url'),
-    config.bamboo.get('username'),
-    config.bamboo.get('password'));
+    "https://" + process.env.BAMBOO_URL,
+    process.env.BAMBOO_USERNAME,
+    process.env.BAMBOO_PASSWORD);
 
 // Setup GitHub Connection
 const github = new GitHub({
-    username: config.github.get('username'),
-    password:config.github.get('password')
+    username: process.env.GITHUB_USERNAME,
+    password: process.env.GITHUB_PASSWORD
 });
 
 // Setup Jira Connection
 const jira = new JiraClient({
-    host: config.jira.get('url'),
+    host: process.env.JIRA_URL,
     basic_auth: {
-        username: config.jira.get('username'),
-        password: config.jira.get('password')
+        username: process.env.JIRA_USERNAME,
+        password: process.env.JIRA_PASSWORD
     }
 })
 
-config.bamboo.authorization = Buffer.from(config.bamboo.username + ':' + config.bamboo.password).toString('base64');
+let bambooAuth = Buffer.from(process.env.BAMBOO_USERNAME + ':' + process.env.BAMBOO_PASSWORD).toString('base64');
 // Start listening for webhooks
 http.createServer(function (req, res) {
     handler(req, res, function (err) {
         res.statusCode = 404;
         res.end('no such location')
     })
-}).listen(config.web.get('port'));
+}).listen(process.env.WEB_PORT);
 
 function syncItem() {
     return {
@@ -78,14 +79,14 @@ function jiraIssue(newItem) {
     return {
         "fields": {
             "project": {
-                "id": config.jira.project.get('id')
+                "id": process.env.JIRA_PROJECT_ID
             },
             "summary": newItem.title,
             "description": newItem.description,
             "issuetype": {
-                "id": config.jira.issuetype.get('id')
+                "id": process.env.JIRA_ISSUETYPE_ID
             },
-            "labels": config.jira.get('labels')
+            "labels": process.env.JIRA_LABELS
         },
 
     }
