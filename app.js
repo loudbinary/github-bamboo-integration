@@ -8,10 +8,9 @@ const events = require('github-webhook-handler/events');
 const GitHub = require('github-api');
 const Bamboo = require('bamboo-api');
 
-console.log(process.env.JIRA_LABELS);
 // Setup Bamboo connection
 const bamboo = new Bamboo(
-    "https://" + process.env.BAMBOO_URL,
+    `https://${process.env.BAMBOO_URL}`,
     process.env.BAMBOO_USERNAME,
     process.env.BAMBOO_PASSWORD);
 
@@ -30,7 +29,7 @@ const jira = new JiraClient({
     }
 })
 
-let bambooAuth = Buffer.from(process.env.BAMBOO_USERNAME + ':' + process.env.BAMBOO_PASSWORD).toString('base64');
+const bambooAuth = Buffer.from(`${process.env.BAMBOO_USERNAME}:${process.env.BAMBOO_PASSWORD}`).toString('base64');
 // Start listening for webhooks
 http.createServer(function (req, res) {
     handler(req, res, function (err) {
@@ -117,12 +116,12 @@ function addCommentBambooBuild(newItem,repo,bambooResults,callback){
     var http = require("https");
     var options = {
         "method": "POST",
-        "hostname": config.bamboo.get('url'),
+        "hostname": process.env.BAMBOO_URL,
         "port": null,
-        "path": "/rest/api/latest/result/" + bambooResults.buildResultKey + "/comment",
+        "path": `/rest/api/latest/result/${bambooResults.buildResultKey}/comment`,
         "headers": {
             "content-type": "application/json",
-            "authorization": "Basic " + config.bamboo.authorization,
+            "authorization": `Basic ${bambooAuth}`,
             "cache-control": "no-cache",
         }
     };
@@ -140,7 +139,7 @@ function addCommentBambooBuild(newItem,repo,bambooResults,callback){
     });
 
     req.write(JSON.stringify({ author: 'administrator',
-        content: newItem.jira_key + ' is linked to this build' }));
+        content: `${newItem.jira_key} is linked to this build` }));
     req.end();
 }
 
@@ -173,9 +172,9 @@ function checkStatus(event,callback) {
         newItem.contributor = event.payload.sender.login;
         newItem.repo  = event.payload.repository.full_name;
         newItem.contributor_url = event.payload.sender.html_url;
-        newItem.smart_url = event.payload.repository.full_name + "#" + event.payload.number;
+        newItem.smart_url = `${event.payload.repository.full_name}#${event.payload.number}`;
         newItem.title = event.payload.pull_request.title;
-        newItem.description = event.payload.pull_request.body + " \r\n\r\nReferences: " + event.payload.repository.full_name + "#" + event.payload.number;
+        newItem.description = `${event.payload.pull_request.body} \r\n\r\nReferences: ${event.payload.repository.full_name}#${event.payload.number}`;
         newItem.pr_branch = event.payload.pull_request.head.ref;
         newItem.base_branch = event.payload.pull_request.base.ref;
         newItem.issue_url = event.payload.pull_request.issue_url;
@@ -308,7 +307,7 @@ function checkStatus(event,callback) {
             function(newItem,repo,callback){
                 var urlParams = {"os_authType": "basic","bamboo.variable.GITHUB_ISSUE_ID": newItem.issue_number, "bamboo.variable.JIRAISSUE_KEY": newItem.jira_key,"bamboo.variable.GITHUB_SHA": newItem.sha,"bamboo.variable.GITHUBISSUE_KEY": newItem.issue_number,"bamboo.variable.ISSUE_ID": newItem.issue_number,"bamboo.variable.JIRAISSUE_URL": newItem.jiraIssue_url,"bamboo.variable.GITHUB_ISSUE_URL": newItem.issue_url,"bamboo.variable.GITHUB_REPO": newItem.repo,"bamboo.variable.GITHUBISSUE_USER": "openanthem","bamboo.variable.JIRAISSUE_ID": newItem.jira_key};
                 var buildParams = {"executeAllStages": true};
-                bamboo.buildPlan(config.bamboo.get('project') + "-" + config.bamboo.get('plan'), function(error, result) {
+                bamboo.buildPlan(`${process.env.BAMBOO_PROJECT}-${process.env.BAMBOO_PLAN}`, function(error, result) {
                     if (error) {
                         repo.updateStatus(newItem.sha, {
                             state: 'failure', //The state of the status. Can be one of: pending, success, error, or failure.
@@ -332,9 +331,9 @@ function checkStatus(event,callback) {
             function(newItem,repo,bambooResults,callback) {
                 repo.updateStatus(newItem.sha, {
                     state: 'pending', //The state of the status. Can be one of: pending, success, error, or failure.
-                    description: 'Waiting on build: ' + bambooResults.buildNumber,
+                    description: `Waiting on build: ${bambooResults.buildNumber}`,
                     context: 'Verifying build',
-                    target_url: "https://bamboo.previewmy.net/browse/" + bambooResults.buildResultKey
+                    target_url: `https://bamboo.previewmy.net/browse/${bambooResults.buildResultKey}`
                 });
                 callback(null,newItem,repo,bambooResults);
             },
@@ -351,9 +350,9 @@ function checkStatus(event,callback) {
                     } else {
                         repo.updateStatus(newItem.sha, {
                             state: 'success', //The state of the status. Can be one of: pending, success, error, or failure.
-                            description: 'Build finished...' + bambooResults.buildNumber,
+                            description: `Build finished... ${bambooResults.buildNumber}`,
                             context: 'Verifying build',
-                            target_url: "https://bamboo.previewmy.net/browse/" + bambooResults.buildResultKey
+                            target_url: `https://bamboo.previewmy.net/browse/${bambooResults.buildResultKey}`
                         });
                         callback(null,newItem,repo,bambooResults);
                     }
