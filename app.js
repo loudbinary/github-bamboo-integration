@@ -38,24 +38,6 @@ http.createServer(function (req, res) {
     })
 }).listen(process.env.WEB_PORT);
 
-function syncItem() {
-    return {
-        "issue_number": "",
-        "jira_key": "",
-        "issue_url": "",
-        "smart_url": "",
-        "contributor": "",
-        "contributor_url": "",
-        "title": "",
-        "pr_branch": "",
-        "base_branch": "",
-        "statuses_url": "",
-        "description": "",
-        "repo": "",
-        "sha": ""
-    }
-}
-
 // Report error it is occurs
 handler.on('error', function (err) {
     console.error('Error:', err.message)
@@ -167,22 +149,9 @@ function getBuildStatus(newItem,repo,bambooResults,callback) {
 
 function checkStatus(event,callback) {
     if (isNewPr(event) == true) {
-        var newItem = new syncItem();
-        newItem.issue_number = event.payload.number;
-        newItem.contributor = event.payload.sender.login;
-        newItem.repo  = event.payload.repository.full_name;
-        newItem.contributor_url = event.payload.sender.html_url;
-        newItem.smart_url = `${event.payload.repository.full_name}#${event.payload.number}`;
-        newItem.title = event.payload.pull_request.title;
-        newItem.description = `${event.payload.pull_request.body} \r\n\r\nReferences: ${event.payload.repository.full_name}#${event.payload.number}`;
-        newItem.pr_branch = event.payload.pull_request.head.ref;
-        newItem.base_branch = event.payload.pull_request.base.ref;
-        newItem.issue_url = event.payload.pull_request.issue_url;
-        newItem.jiraIssue_url = "";
-        newItem.jira_key = "";
-        newItem.sha = event.payload.pull_request.head.sha;
-        newItem.statuses_url = event.payload.pull_request.statuses_url;
-        var repo = github.getRepo(newItem.repo);
+        const newItem = buildSyncItem(event);
+        const repo = github.getRepo(newItem.repo);
+
         repo.updateStatus(newItem.sha, {
             state: 'pending', //The state of the status. Can be one of: pending, success, error, or failure.
             description: 'Checking your work...',
@@ -378,3 +347,35 @@ handler.on('pull_request', function(event){
         console.log('Finished processing');
     })
 });
+
+function buildSyncItem(event) {
+    const { number: issue_number, pull_request, repository, sender} = event.payload;
+    const { full_name: repoName } = repository;
+    const { login: contributor, html_url: contributor_url} = sender;
+    const { body, head, issue_url, statuses_url, title } = pull_request;
+    const smart_url = `${repoName}#${issue_number}`;
+    const description = `
+        ${body}
+
+        References: ${repoName}#${issue_number}
+    `;
+
+    const newItem = {
+        contributor,
+        contributor_url,
+        description,
+        base_branch: base.ref,
+        jira_key: '',
+        jiraIssue_url: '',
+        issue_number,
+        issue_url,
+        pr_branch: head.ref,
+        repo: repoName,
+        sha: head.sha,
+        smart_url,
+        statuses_url,
+        title
+    };
+
+    return newItem;
+}
