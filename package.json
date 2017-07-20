@@ -18,8 +18,11 @@
   "homepage": "https://github.com/loudbinary/github-bamboo-integration#readme",
   "dependencies": {
     "async": "^2.1.4",
+    "axios": "^0.16.2",
     "bamboo-api": "0.0.9",
+    "bluebird": "^3.5.0",
     "config": "^1.24.0",
+    "dotenv": "^4.0.0",
     "github-api": "^3.0.0",
     "github-webhook-handler": "^0.6.0",
     "jira-connector": "^2.5.0"

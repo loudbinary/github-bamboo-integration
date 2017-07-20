@@ -1,60 +1,48 @@
-var async = require('async');
-var config = require('config');
-var JiraClient = require('jira-connector');
-var http = require('http');
-var createHandler = require('github-webhook-handler');
-var handler = createHandler({ path: '/webhook', secret: 'myhashsecret' });
-var events = require('github-webhook-handler/events');
-var GitHub = require('github-api');
-var Bamboo = require('bamboo-api');
+require('dotenv').config();
+const async = require('async');
+const axios = require('axios');
+const Promise = require('bluebird');
+const JiraClient = require('jira-connector');
+const http = require('http');
+const createHandler = require('github-webhook-handler');
+const handler = createHandler({ path: '/webhook', secret: 'myhashsecret' });
+const events = require('github-webhook-handler/events');
+const GitHub = require('github-api');
+const Bamboo = require('bamboo-api');
+
+Promise.promisifyAll(JiraClient);
+Promise.promisifyAll(Bamboo);
 
 // Setup Bamboo connection
 const bamboo = new Bamboo(
-    "https://" + config.bamboo.get('url'),
-    config.bamboo.get('username'),
-    config.bamboo.get('password'));
+    `https://${process.env.BAMBOO_URL}`,
+    process.env.BAMBOO_USERNAME,
+    process.env.BAMBOO_PASSWORD
+);
 
 // Setup GitHub Connection
 const github = new GitHub({
-    username: config.github.get('username'),
-    password:config.github.get('password')
+    username: process.env.GITHUB_USERNAME,
+    password: process.env.GITHUB_PASSWORD
 });
 
 // Setup Jira Connection
 const jira = new JiraClient({
-    host: config.jira.get('url'),
+    host: process.env.JIRA_URL,
     basic_auth: {
-        username: config.jira.get('username'),
-        password: config.jira.get('password')
+        username: process.env.JIRA_USERNAME,
+        password: process.env.JIRA_PASSWORD
     }
-})
+});
 
-config.bamboo.authorization = Buffer.from(config.bamboo.username + ':' + config.bamboo.password).toString('base64');
+const bambooAuth = Buffer.from(`${process.env.BAMBOO_USERNAME}:${process.env.BAMBOO_PASSWORD}`).toString('base64');
 // Start listening for webhooks
 http.createServer(function (req, res) {
     handler(req, res, function (err) {
         res.statusCode = 404;
         res.end('no such location')
     })
-}).listen(config.web.get('port'));
-
-function syncItem() {
-    return {
-        "issue_number": "",
-        "jira_key": "",
-        "issue_url": "",
-        "smart_url": "",
-        "contributor": "",
-        "contributor_url": "",
-        "title": "",
-        "pr_branch": "",
-        "base_branch": "",
-        "statuses_url": "",
-        "description": "",
-        "repo": "",
-        "sha": ""
-    }
-}
+}).listen(process.env.WEB_PORT);
 
 // Report error it is occurs
 handler.on('error', function (err) {
@@ -64,7 +52,7 @@ handler.on('error', function (err) {
 // Checks event to verify item is new pull request
 // Returns True or False
 function isNewPr(event){
-    if (event.payload.action == "opened" && event.payload.pull_request.state == "open") {
+    if (event.payload.action === 'opened' && event.payload.pull_request.state === "open") {
         console.log('Beginning to process event.id:', event.id);
         return true;
     } else {
@@ -78,14 +66,14 @@ function jiraIssue(newItem) {
     return {
         "fields": {
             "project": {
-                "id": config.jira.project.get('id')
+                "id": process.env.JIRA_PROJECT_ID
             },
             "summary": newItem.title,
             "description": newItem.description,
             "issuetype": {
-                "id": config.jira.issuetype.get('id')
+                "id": process.env.JIRA_ISSUETYPE_ID
             },
-            "labels": config.jira.get('labels')
+            "labels": process.env.JIRA_LABELS
         },
 
     }
@@ -93,54 +81,32 @@ function jiraIssue(newItem) {
 
 // Closes Pull Request
 // TODO: Need to add comment, just prior to closure and why.
-function closePr(event,newItem,repo,callback) {
-    repo.updatePullRequest(newItem.issue_number,{state:"closed"},function(){
-        callback()
-    })
+function closePr(newItem,repo) {
+    return repo.updatePullRequest(newItem.issue_number,{state:'closed'});
 }
 
 // Sends jiraIssue for creation
 function createJiraIssue(newItem,callback) {
-    var issue = new jiraIssue(newItem);
-    jira.issue.createIssue(issue,function(err,results){
-        if (err){
-            callback(err)
-        } {
-            callback(null,results);
-        }
-    })
+    const issue = new jiraIssue(newItem);
+    return jira.issue.createIssueAsync(issue);
 }
 
 // Add recently created Jira Issue to recently started Bamboo build.
-function addCommentBambooBuild(newItem,repo,bambooResults,callback){
-    var http = require("https");
-    var options = {
+function addCommentBambooBuild(newItem,repo,bambooResults){
+    const options = {
         "method": "POST",
-        "hostname": config.bamboo.get('url'),
-        "port": null,
-        "path": "/rest/api/latest/result/" + bambooResults.buildResultKey + "/comment",
+        "hostname": `${process.env.BAMBOO_URL}/rest/api/latest/result/${bambooResults.buildResultKey}/comment`,
         "headers": {
             "content-type": "application/json",
-            "authorization": "Basic " + config.bamboo.authorization,
+            "authorization": `Basic ${bambooAuth}`,
             "cache-control": "no-cache",
         }
     };
 
-    var req = http.request(options, function (res) {
-        var chunks = [];
-
-        res.on("data", function (chunk) {
-            chunks.push(chunk);
-        });
-
-        res.on("end", function () {
-            callback(null,newItem,repo,bambooResults)
-        });
-    });
-
-    req.write(JSON.stringify({ author: 'administrator',
-        content: newItem.jira_key + ' is linked to this build' }));
-    req.end();
+    return axios(options);
+    // NOT SURE WHAT WAS TRYING TO BE ACCOMPLISHED HERE:
+    // req.write(JSON.stringify({ author: 'administrator',
+    //     content: `${newItem.jira_key} is linked to this build` }));
 }
 
 // Does absolutely nothing, uncomment console if you are unsure on webhook configuration, it seems ALL
@@ -152,224 +118,176 @@ handler.on('*', function(event){
 // Potentially dangerous recursive lookup, and wait for buildstatus in Bamboo.
 // TODO: Implement eventing for BuildStatus monitoring, and reporting
 function getBuildStatus(newItem,repo,bambooResults,callback) {
-    bamboo.getBuildStatus(bambooResults.buildResultKey, function(error, result) {
-        if (error) {
-            callback('Unable to get status')
-
-        }
-        if (result === "Successful" || result === 'Finished') {
-            callback(null,newItem,repo,bambooResults,true)
-        } else {
-            getBuildStatus(newItem,repo,bambooResults,callback);
-        };
-    });
+    // may need to implement a retry to wait for buildstatus update
+    return bamboo.getBuildStatusAsync(bambooResults.buildResultKey);
 }
 
 function checkStatus(event,callback) {
     if (isNewPr(event) == true) {
-        var newItem = new syncItem();
-        newItem.issue_number = event.payload.number;
-        newItem.contributor = event.payload.sender.login;
-        newItem.repo  = event.payload.repository.full_name;
-        newItem.contributor_url = event.payload.sender.html_url;
-        newItem.smart_url = event.payload.repository.full_name + "#" + event.payload.number;
-        newItem.title = event.payload.pull_request.title;
-        newItem.description = event.payload.pull_request.body + " \r\n\r\nReferences: " + event.payload.repository.full_name + "#" + event.payload.number;
-        newItem.pr_branch = event.payload.pull_request.head.ref;
-        newItem.base_branch = event.payload.pull_request.base.ref;
-        newItem.issue_url = event.payload.pull_request.issue_url;
-        newItem.jiraIssue_url = "";
-        newItem.jira_key = "";
-        newItem.sha = event.payload.pull_request.head.sha;
-        newItem.statuses_url = event.payload.pull_request.statuses_url;
-        var repo = github.getRepo(newItem.repo);
-        repo.updateStatus(newItem.sha, {
-            state: 'pending', //The state of the status. Can be one of: pending, success, error, or failure.
-            description: 'Checking your work...',
-            context: 'Pull Request Validation started'
-        });
-        async.waterfall([
-            function(callback){
-                repo.updateStatus(newItem.sha, {
-                    state: 'pending', //The state of the status. Can be one of: pending, success, error, or failure.
-                    description: 'Verifying PR is not to master...',
-                    context: 'Checking branch'
-                });
-                callback(null,newItem,repo);
-            },
-            function(newItem,repo,callback){
-                if (newItem.base_branch == 'master') {
-                    repo.updateStatus(newItem.sha, {
+        const newItem = buildSyncItem(event);
+        const repo = github.getRepo(newItem.repo);
+
+        return repo.updateStatus(newItem.sha, {
+                state: 'pending', //The state of the status. Can be one of: pending, success, error, or failure.
+                description: 'Checking your work...',
+                context: 'Pull Request Validation started'
+            })
+            .then(() => repo.updateStatus(newItem.sha, {
+                state: 'pending', //The state of the status. Can be one of: pending, success, error, or failure.
+                description: 'Verifying PR is not to master...',
+                context: 'Checking branch'
+            }))
+            .then(() => {
+                if (newItem.base_branch === 'master') {
+                    return repo.updateStatus(newItem.sha, {
                         state: 'failure', //The state of the status. Can be one of: pending, success, error, or failure.
                         description: 'Verifying PR is not to master...',
                         context: 'Checking branch'
-                    });
-                    closePr(event,newItem,repo,function(){
-                        callback('Pull request sent to master, closed pull request.');
                     })
-                    callback(null,newItem,repo)
-                }
-                else {
-                    if (newItem.contributor != "openanthem-admin"){
-                        repo.updateStatus(newItem.sha, {
-                            state: 'success', //The state of the status. Can be one of: pending, success, error, or failure.
-                            description: 'Pull Request is not to master...',
-                            context: 'Checking branch'
-                        });
-                        callback(null,newItem,repo);
-                    } else {
-                        repo.updateStatus(newItem.sha, {
-                            state: 'success', //The state of the status. Can be one of: pending, success, error, or failure.
-                            description: 'Open Anthem Team request, skipping validation...',
-                            context: 'Checking branch'
-                        });
-                        callback(null,newItem,repo);
-                    }
+                    .then(() => {
+                        // comment message 'Pull request sent to master, closed pull request.'
+                        return repo.updatePullRequest(newItem.issue_number,{state:'closed'});
+                    });
 
+                } else if (newItem.contributor !== 'openanthem-admin'){
+                    return repo.updateStatus(newItem.sha, {
+                        state: 'success', //The state of the status. Can be one of: pending, success, error, or failure.
+                        description: 'Pull Request is not to master...',
+                        context: 'Checking branch'
+                    });
+                } else {
+                    return repo.updateStatus(newItem.sha, {
+                        state: 'success', //The state of the status. Can be one of: pending, success, error, or failure.
+                        description: 'Open Anthem Team request, skipping validation...',
+                        context: 'Checking branch'
+                    });
                 }
-            },
-            function(newItem,repo,callback) {
-                if (newItem.base_branch == 'develop') {
-                    repo.updateStatus(newItem.sha, {
+            })
+            .then(() => {
+                if (newItem.base_branch === 'develop') {
+                    return repo.updateStatus(newItem.sha, {
                         state: 'success', //The state of the status. Can be one of: pending, success, error, or failure.
                         description: 'Pull Request is to develop branch...',
                         context: 'Checking branch'
                     });
-                    callback(null,newItem,repo);
-                }
-                else {
-                    if (newItem.contributor != "openanthem-admin"){
-                        repo.updateStatus(newItem.sha, {
+                } else if (newItem.contributor !== "openanthem-admin"){
+                    return repo.updateStatus(newItem.sha, {
                             state: 'failure', //The state of the status. Can be one of: pending, success, error, or failure.
                             description: 'PR is to develop branch...',
                             context: 'Checking branch'
-                        });
-                        closePr(event,newItem,repo,function(){
-                            callback('Pull request was not made to develop branch, closing pull request');
                         })
-                    } else {
-                        repo.updateStatus(newItem.sha, {
-                            state: 'success', //The state of the status. Can be one of: pending, success, error, or failure.
-                            description: 'Open Anthem Team request, skipping validation...',
-                            context: 'Checking branch'
+                        .then(() => {
+                            // comment message: 'Pull request was not made to develop branch, closing pull request'
+                            return repo.updatePullRequest(newItem.issue_number,{state:'closed'});
                         });
-                        callback(null,newItem,repo);
-                    }
-
+                } else {
+                    return repo.updateStatus(newItem.sha, {
+                        state: 'success', //The state of the status. Can be one of: pending, success, error, or failure.
+                        description: 'Open Anthem Team request, skipping validation...',
+                        context: 'Checking branch'
+                    });
                 }
-            },
-            function(newItem,repo,callback){
-                repo.updateStatus(newItem.sha, {
-                    state: 'pending', //The state of the status. Can be one of: pending, success, error, or failure.
-                    description: 'Creating internal tracking...',
-                    context: 'Syncronizing Pull Request to Open Anthem Team'
-                });
-                callback(null,newItem,repo);
-            },
-            function(newItem,repo,callback){
-                createJiraIssue(newItem,function(err,results){
-                    if (err) {
-                        repo.updateStatus(newItem.sha, {
-                            state: 'failure', //The state of the status. Can be one of: pending, success, error, or failure.
-                            description: 'Failed to create internal tracking...',
-                            context: 'Syncronizing Pull Request to Open Anthem Team',
-                        });
-                        callback(err)
-                    } else {
-                        newItem.jira_key = results.key;
-                        newItem.jiraIssue_url = results.self;
-                        repo.updateStatus(newItem.sha, {
-                            state: 'success', //The state of the status. Can be one of: pending, success, error, or failure.
-                            description: 'Created internal tracking...',
-                            context: 'Syncronizing Pull Request to Open Anthem Team',
-                            target_url: newItem.jiraIssue_url
-                        });
-                        callback(null,newItem,repo);
-                    }
-                });
-            },
-            function(newItem,repo,callback){
-                repo.updateStatus(newItem.sha, {
-                    state: 'success', //The state of the status. Can be one of: pending, success, error, or failure.
-                    description: 'Creating internal tracking...',
-                    context: 'Syncronizing Pull Request to Open Anthem Team'
-                });
-                callback(null,newItem,repo);
-            },
-            function(newItem,repo,callback) {
-                repo.updateStatus(newItem.sha, {
-                    state: 'pending', //The state of the status. Can be one of: pending, success, error, or failure.
-                    description: 'Building and testing changes...',
-                    context: 'Build and Test'
-                })
-                callback(null,newItem,repo);
-            },
-            function(newItem,repo,callback){
-                var urlParams = {"os_authType": "basic","bamboo.variable.GITHUB_ISSUE_ID": newItem.issue_number, "bamboo.variable.JIRAISSUE_KEY": newItem.jira_key,"bamboo.variable.GITHUB_SHA": newItem.sha,"bamboo.variable.GITHUBISSUE_KEY": newItem.issue_number,"bamboo.variable.ISSUE_ID": newItem.issue_number,"bamboo.variable.JIRAISSUE_URL": newItem.jiraIssue_url,"bamboo.variable.GITHUB_ISSUE_URL": newItem.issue_url,"bamboo.variable.GITHUB_REPO": newItem.repo,"bamboo.variable.GITHUBISSUE_USER": "openanthem","bamboo.variable.JIRAISSUE_ID": newItem.jira_key};
-                var buildParams = {"executeAllStages": true};
-                bamboo.buildPlan(config.bamboo.get('project') + "-" + config.bamboo.get('plan'), function(error, result) {
+            })
+            .then(() => repo.updateStatus(newItem.sha, {
+                state: 'pending', //The state of the status. Can be one of: pending, success, error, or failure.
+                description: 'Creating internal tracking...',
+                context: 'Syncronizing Pull Request to Open Anthem Team'
+            }))
+            .then(() => {
+                return createJiraIssue(newItem)
+                    .then((err,results) => {
+                        if (err) {
+                            return repo.updateStatus(newItem.sha, {
+                                state: 'failure', //The state of the status. Can be one of: pending, success, error, or failure.
+                                description: 'Failed to create internal tracking...',
+                                context: 'Syncronizing Pull Request to Open Anthem Team',
+                            });
+                        } else {
+                            newItem.jira_key = results.key;
+                            newItem.jiraIssue_url = results.self;
+                            return repo.updateStatus(newItem.sha, {
+                                state: 'success', //The state of the status. Can be one of: pending, success, error, or failure.
+                                description: 'Created internal tracking...',
+                                context: 'Syncronizing Pull Request to Open Anthem Team',
+                                target_url: newItem.jiraIssue_url
+                            });
+                        }
+                    });
+            })
+            .then(() => repo.updateStatus(newItem.sha, {
+                state: 'success', //The state of the status. Can be one of: pending, success, error, or failure.
+                description: 'Creating internal tracking...',
+                context: 'Syncronizing Pull Request to Open Anthem Team'
+            }))
+            .then(() => repo.updateStatus(newItem.sha, {
+                state: 'pending', //The state of the status. Can be one of: pending, success, error, or failure.
+                description: 'Building and testing changes...',
+                context: 'Build and Test'
+            }))
+            .then(() => {
+                const buildParams = {"executeAllStages": true};
+                const urlParams = {
+                    "os_authType": "basic",
+                    "bamboo.variable.GITHUB_ISSUE_ID": newItem.issue_number,
+                    "bamboo.variable.JIRAISSUE_KEY": newItem.jira_key,
+                    "bamboo.variable.GITHUB_SHA": newItem.sha,
+                    "bamboo.variable.GITHUBISSUE_KEY": newItem.issue_number,
+                    "bamboo.variable.ISSUE_ID": newItem.issue_number,
+                    "bamboo.variable.JIRAISSUE_URL": newItem.jiraIssue_url,
+                    "bamboo.variable.GITHUB_ISSUE_URL": newItem.issue_url,
+                    "bamboo.variable.GITHUB_REPO": newItem.repo,
+                    "bamboo.variable.GITHUBISSUE_USER": "openanthem",
+                    "bamboo.variable.JIRAISSUE_ID": newItem.jira_key
+                };
+
+                return bamboo.buildPlan(`${process.env.BAMBOO_PROJECT}-${process.env.BAMBOO_PLAN}`, urlParams, buildParams);
+            })
+            .then((error, result) => {
                     if (error) {
-                        repo.updateStatus(newItem.sha, {
+                        return repo.updateStatus(newItem.sha, {
                             state: 'failure', //The state of the status. Can be one of: pending, success, error, or failure.
                             description: 'Unable to submit job, try again later...',
                             context: 'Build and Test'
                         });
-                        console.log(error);
-                        callback('Unable to submit job to bamboo');
-                    }
-
-                    console.log("Result:", result);
-                    repo.updateStatus(newItem.sha, {
-                        state: 'success', //The state of the status. Can be one of: pending, success, error, or failure.
-                        description: 'Submitted job, waiting for results...',
-                        context: 'Build and Test'
-                    });
-                    callback(null,newItem,repo,JSON.parse(result));
-                }, urlParams, buildParams);
-
-            },
-            function(newItem,repo,bambooResults,callback) {
-                repo.updateStatus(newItem.sha, {
-                    state: 'pending', //The state of the status. Can be one of: pending, success, error, or failure.
-                    description: 'Waiting on build: ' + bambooResults.buildNumber,
-                    context: 'Verifying build',
-                    target_url: "https://bamboo.previewmy.net/browse/" + bambooResults.buildResultKey
-                });
-                callback(null,newItem,repo,bambooResults);
-            },
-            function(newItem,repo,bambooResults,callback){
-                addCommentBambooBuild(newItem,repo,bambooResults,function(){
-                    callback(null,newItem,repo,bambooResults)
-                });
-            },
-            function(newItem,repo,bambooResults,callback) {
-                var status = false;
-                getBuildStatus(newItem,repo,bambooResults,function(err,newItem,repo,bambooResults){
-                    if (err){
-                        callback(err)
+                        console.log(error, 'Unable to submit job to bamboo');
+                        throw new Error('Unable to submit job to bamboo');
                     } else {
-                        repo.updateStatus(newItem.sha, {
-                            state: 'success', //The state of the status. Can be one of: pending, success, error, or failure.
-                            description: 'Build finished...' + bambooResults.buildNumber,
-                            context: 'Verifying build',
-                            target_url: "https://bamboo.previewmy.net/browse/" + bambooResults.buildResultKey
-                        });
-                        callback(null,newItem,repo,bambooResults);
+                        return repo.updateStatus(newItem.sha, {
+                                state: 'success', //The state of the status. Can be one of: pending, success, error, or failure.
+                                description: 'Submitted job, waiting for results...',
+                                context: 'Build and Test'
+                            })
+                            .then(results => {
+                                console.log("Result:", result);
+                                return results;
+                            });
                     }
-                })
-            }
-
-        ],function(err,newItem,repo){
-            repo.updateStatus(newItem.sha, {
+            })
+            .then(bambooResults => {
+                return repo.updateStatus(newItem.sha, {
+                        state: 'pending', //The state of the status. Can be one of: pending, success, error, or failure.
+                        description: `Waiting on build: ${bambooResults.buildNumber}`,
+                        context: 'Verifying build',
+                        target_url: `https://bamboo.previewmy.net/browse/${bambooResults.buildResultKey}`
+                    })
+                    .then(() => addCommentBambooBuild(newItem,repo,bambooResults))
+                    .then(() => getBuildStatus(newItem,repo,bambooResults))
+                    .then(() => repo.updateStatus(newItem.sha, {
+                        state: 'success', //The state of the status. Can be one of: pending, success, error, or failure.
+                        description: `Build finished... ${bambooResults.buildNumber}`,
+                        context: 'Verifying build',
+                        target_url: `https://bamboo.previewmy.net/browse/${bambooResults.buildResultKey}`
+                    }));
+            });
+            .then(() => repo.updateStatus(newItem.sha, {
                 state: 'success', //The state of the status. Can be one of: pending, success, error, or failure.
                 description: 'Validation Completed successfully...',
                 context: 'Pull Request Validation started'
+            }))
+            .catch(err => {
+                console.log(err);
             });
-            callback(null);
-        })
     }
-
-
 }
 
 handler.on('pull_request', function(event){
@@ -378,3 +296,35 @@ handler.on('pull_request', function(event){
         console.log('Finished processing');
     })
 });
+
+function buildSyncItem(event) {
+    const { number: issue_number, pull_request, repository, sender} = event.payload;
+    const { full_name: repoName } = repository;
+    const { login: contributor, html_url: contributor_url} = sender;
+    const { body, head, issue_url, statuses_url, title } = pull_request;
+    const smart_url = `${repoName}#${issue_number}`;
+    const description = `
+        ${body}
+
+        References: ${repoName}#${issue_number}
+    `;
+
+    const newItem = {
+        contributor,
+        contributor_url,
+        description,
+        base_branch: base.ref,
+        jira_key: '',
+        jiraIssue_url: '',
+        issue_number,
+        issue_url,
+        pr_branch: head.ref,
+        repo: repoName,
+        sha: head.sha,
+        smart_url,
+        statuses_url,
+        title
+    };
+
+    return newItem;
+}
